@@ -1,0 +1,55 @@
+-- Trigger to Update Age in nationalid Table When a New Birth Certificate is Inserted
+DELIMITER $$
+
+CREATE TRIGGER update_age_after_birth_insert
+AFTER INSERT ON birthcertificate
+FOR EACH ROW
+BEGIN
+    DECLARE age INT;
+    SET age = TIMESTAMPDIFF(YEAR, NEW.DateOfBirth, CURDATE());
+    INSERT INTO nationalid (IssueDate, BirthIdNo, Age, BloodGroup)
+    VALUES (CURDATE(), NEW.BirthIdNo, age, 'Unknown'); -- Assuming default BloodGroup as 'Unknown'
+END$$
+
+DELIMITER ;
+-- Trigger to Ensure Unique National ID in voterlist
+DELIMITER $$
+
+CREATE TRIGGER unique_nid_before_insert
+BEFORE INSERT ON voterlist
+FOR EACH ROW
+BEGIN
+    DECLARE count INT;
+    SELECT COUNT(*) INTO count FROM voterlist WHERE NID = NEW.NID;
+    IF count > 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Duplicate NID found in voterlist';
+    END IF;
+END$$
+
+DELIMITER ;
+-- Trigger to Ensure Age is Updated in nationalid Table
+DELIMITER $$
+
+CREATE TRIGGER update_age_before_insert
+BEFORE INSERT ON nationalid
+FOR EACH ROW
+BEGIN
+    SET NEW.Age = TIMESTAMPDIFF(YEAR, (SELECT DateOfBirth FROM birthcertificate WHERE BirthIdNo = NEW.BirthIdNo), CURDATE());
+END$$
+
+DELIMITER ;
+-- Trigger to Prevent Voting for Users Under 18
+DELIMITER $$
+
+CREATE TRIGGER check_age_before_insert
+BEFORE INSERT ON voterlist
+FOR EACH ROW
+BEGIN
+    DECLARE user_age INT;
+    SELECT Age INTO user_age FROM nationalid WHERE NID = NEW.NID;
+    IF user_age < 18 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'User must be at least 18 years old to vote';
+    END IF;
+END$$
+
+DELIMITER ;
